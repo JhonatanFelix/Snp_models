@@ -37,7 +37,7 @@ def parse_args():
         "--trait",
         type=int,
         required=True,
-        help="Trait index to train on: 2.  3. 4. 5.",
+        help="Trait index to train on: 2.shoulder  3.top 4.buttock(side) 5.buttock(rear) 6.size 7.musculature",
     )
     parser.add_argument(
         "-l",
@@ -60,7 +60,7 @@ def main():
 
     setup_logger(log_filename)
 
-    logging.info("Starting training")
+    logging.info("Starting")
     logging.info(f"Arguments: {vars(args)}")
 
     # Loading genomical and phenotypical data

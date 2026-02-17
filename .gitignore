@@ -2,3 +2,5 @@ constants.py
 *.log
 *.pkl
 *.png
+venv*
+data
