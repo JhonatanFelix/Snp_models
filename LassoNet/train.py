@@ -39,13 +39,24 @@ def parse_args():
         required=True,
         help="Trait index to train on: 2.  3. 4. 5.",
     )
+    parser.add_argument(
+        "-l",
+        "--layers",
+        type=int,
+        nargs="+",  # this means one or more integers
+        required=False,
+        default=[10],
+        help="Hidden layer sizes (e.g. 10 20) (default:10)",
+    )
     return parser.parse_args()
 
 
 def main():
     # Loading arguments and logger
     args = parse_args()
-    log_filename = f"train_trait{args.trait}_n{args.n_samples}.log"
+    layers = tuple(args.layers)
+
+    log_filename = f"train_trait{args.trait}_n{args.n_samples}_layers{layers}.log"
 
     setup_logger(log_filename)
 
@@ -88,6 +99,7 @@ def main():
     del pheno_df
 
     ## Spliting the dataset
+    logging.info("Splitting the dataset")
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 
     del X
@@ -108,12 +120,14 @@ def main():
     optim_fn = lambda params: torch.optim.Adam(params, lr=1e-4)
 
     model = LassoNetRegressor(
-        hidden_dims=(10, 10),
+        hidden_dims=layers,
         verbose=True,
         patience=(100, 5),
         optim=(optim_fn, optim_fn),
         lambda_start=5,
     )
+
+    logging.info("Calculating the path of the model")
     path = model.path(X_train, y_train, return_state_dicts=True)
 
     data_to_save = {
@@ -130,7 +144,10 @@ def main():
     del y_train
     del y_test
 
-    with open(f"lassonet_{int(args.n_samples / 1000)}k_{args.trait}.pkl", "wb") as f:
+    logging.info("Saving path of the model")
+    with open(
+        f"lassonet_{int(args.n_samples / 1000)}k_n{args.trait}_layers{layers}.pkl", "wb"
+    ) as f:
         pickle.dump(data_to_save, f)
 
     logging.info("Training finished")
