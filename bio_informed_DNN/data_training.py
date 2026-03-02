@@ -18,6 +18,9 @@ from torch.utils.data import DataLoader, TensorDataset
 # Arguments
 # ===============================
 
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Train a biologically informed model with configurable parameters"
@@ -85,19 +88,6 @@ def parse_args():
 # ===============================
 # Masked Linear Layer
 # ===============================
-
-# class MaskedLinear(nn.Module):
-#     def __init__(self, in_features, out_features, mask):
-#         super().__init__()
-
-#         self.weight = nn.Parameter(torch.randn(out_features, in_features) * 0.01)
-#         self.bias = nn.Parameter(torch.zeros(out_features))
-
-#         self.register_buffer("mask", mask)
-
-#     def forward(self, x):
-#         masked_weight = self.weight * self.mask
-#         return F.linear(x, masked_weight, self.bias)
     
 class MaskedLinear(nn.Module):
     def __init__(self, in_features, out_features, mask, activation="relu"):
@@ -131,34 +121,6 @@ class MaskedLinear(nn.Module):
 # Flexible Partial Network
 # ===============================
 
-# class PartialNet(nn.Module):
-#     def __init__(self, input_dim, hidden1, hidden2,
-#                  fc_layers, mask1, mask2):
-#         super().__init__()
-
-#         self.activation = nn.ReLU()
-
-#         self.masked1 = MaskedLinear(input_dim, hidden1, mask1)
-#         self.masked2 = MaskedLinear(hidden1, hidden2, mask2)
-
-#         # Dynamically build FC stack
-#         layers = []
-#         prev_dim = hidden2
-
-#         for dim in fc_layers:
-#             layers.append(nn.Linear(prev_dim, dim))
-#             layers.append(self.activation)
-#             prev_dim = dim
-
-#         layers.append(nn.Linear(prev_dim, 1))
-
-#         self.fc_stack = nn.Sequential(*layers)
-
-#     def forward(self, x):
-#         x = self.activation(self.masked1(x))
-#         x = self.activation(self.masked2(x))
-#         x = self.fc_stack(x)
-#         return x
 
 class PartialNet(nn.Module):
     def __init__(self, input_dim, hidden1, hidden2,
@@ -251,12 +213,12 @@ class EarlyStopping:
 # Logger
 # ===============================
 
-def setup_logger(log_filename):
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(message)s",
-        handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
-    )
+# def setup_logger(log_filename):
+#     logging.basicConfig(
+#         level=logging.INFO,
+#         format="%(asctime)s | %(levelname)s | %(message)s",
+#         handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
+#     )
 
 
 # ===============================
@@ -268,14 +230,24 @@ def main():
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logging.info(f"Using device: {device}")
+    print(logging.getLogger().handlers)
 
-    args_str = f'{args.layers}_lr{args.learning_rate}_trait{args.trait}\
-        _epoch{args.epochs}_crit{args.criterion}_act{args.activation}\
-            _batch{args.batch_size}_wdecay{args.weight_decay}_dropout{args.dropout}\
-                _seed{args.seed}'
-    log_name = f'./logs/training_{args_str}.log'
+    args_str = (
+        f"{args.layers}_lr{args.learning_rate}_trait{args.trait}"
+        f"_epoch{args.epochs}_crit{args.criterion}_act{args.activation}"
+        f"_batch{args.batch_size}_wdecay{args.weight_decay}_dropout{args.dropout}"
+        f"_seed{args.seed}"
+    )
+    log_name = f'./logs_models/training_{args_str}.log'
 
-    setup_logger(log_name)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        handlers=[
+            logging.FileHandler(log_name),
+            logging.StreamHandler()
+        ]   
+    )
 
     logging.info('\n'*3+"======== STARTED TRAINING ========"+'\n'*3)
     logging.info(f"Parameters: \n \
@@ -373,7 +345,7 @@ def main():
     num_epochs = args.epochs
     train_losses = []
     val_losses = []
-    early_stopper = EarlyStopping(patience=20, min_delta=1e-4)
+    #early_stopper = EarlyStopping(patience=20, min_delta=1e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
 
     X_train = X_train.to(device)
@@ -390,7 +362,7 @@ def main():
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=4,
-        pin_memory=True
+        pin_memory=torch.cuda.is_available()
     )
 
     val_loader = DataLoader(
@@ -398,7 +370,7 @@ def main():
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=4,
-        pin_memory=True
+        pin_memory=torch.cuda.is_available()
 )
     for epoch in range(num_epochs):
 
@@ -413,8 +385,6 @@ def main():
             loss = criterion(outputs, yb)
             loss.backward()
             optimizer.step()
-
-        loss.backward()
 
         # Gradient monitoring
         total_norm = 0
@@ -442,13 +412,13 @@ def main():
 
         logging.info(f"Epoch {epoch} | "
                      f"Train Loss: {loss.item():.6f} | "
-                     f"val Loss: {val_loss.item():.6f}")
+                     f"val Loss: {val_loss:.6f}")
         
-        early_stopper(val_loss)
+        #early_stopper(val_loss)
 
-        if early_stopper.early_stop:
-            print("Early stopping triggered")
-            break
+        # if early_stopper.early_stop:
+        #     print("Early stopping triggered")
+        #     break
         scheduler.step(val_loss)
 
     logging.info('\n'*3+"======== FINISHED TRAINING ========")
