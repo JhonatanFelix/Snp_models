@@ -12,6 +12,7 @@ from scipy.stats import pearsonr
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader, TensorDataset
 
 # ===============================
 # Arguments
@@ -73,7 +74,12 @@ def parse_args():
         help='Choose the activation function for training: relu, sigmoid, gelu \
             (default: gelu)'
     )
-    
+
+    parser.add_argument("--weight-decay", type=float, default=0.0)
+    parser.add_argument("--dropout", type=float, default=0.0)
+    parser.add_argument("--batch-size", type=int, default=512)
+    parser.add_argument("--seed", type=int, default=42)
+        
     return parser.parse_args()
 
 # ===============================
@@ -157,7 +163,7 @@ class MaskedLinear(nn.Module):
 class PartialNet(nn.Module):
     def __init__(self, input_dim, hidden1, hidden2,
                  fc_layers, mask1, mask2,
-                 activation="relu", use_layernorm=True):
+                 activation="relu", use_layernorm=True, dropout=0.0):
 
         super().__init__()
 
@@ -183,12 +189,16 @@ class PartialNet(nn.Module):
             linear = nn.Linear(prev_dim, dim)
             if activation == "relu":
                 nn.init.kaiming_normal_(linear.weight, nonlinearity="relu")
-            elif activation == 'gelu' or 'sigmoid':
+            elif activation in ['gelu','sigmoid']:
                 nn.init.kaiming_normal_(linear.weight, nonlinearity="linear")
-
+            
+            nn.init.zeros_(linear.bias)
+            
             layers.append(linear)
             layers.append(nn.LayerNorm(dim) if use_layernorm else nn.Identity())
             layers.append(self.activation_fn)
+            if dropout > 0:
+                layers.append(nn.Dropout(dropout))
 
             prev_dim = dim
 
@@ -256,15 +266,24 @@ def setup_logger(log_filename):
 def main():
 
     args = parse_args()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logging.info(f"Using device: {device}")
+
     args_str = f'{args.layers}_lr{args.learning_rate}_trait{args.trait}\
-        _epoch{args.epochs}_crit{args.criterion}_act{args.activation}'
+        _epoch{args.epochs}_crit{args.criterion}_act{args.activation}\
+            _batch{args.batch_size}_wdecay{args.weight_decay}_dropout{args.dropout}\
+                _seed{args.seed}'
     log_name = f'./logs/training_{args_str}.log'
+
     setup_logger(log_name)
+
     logging.info('\n'*3+"======== STARTED TRAINING ========"+'\n'*3)
     logging.info(f"Parameters: \n \
                  Layers:{args.layers} \n Learning rate = {args.learning_rate}\
                 \n trait:{args.trait} \n epochs: {args.epochs} \n \
-                criterion: {args.criterion} \n activation: {args.activation} ")
+                criterion: {args.criterion} \n activation: {args.activation} \
+                \n batch: {args.batch_size} \n wdecay{args.weight_decay} \
+                \n dropout{args.dropout} \n seed{args.seed}'")
 
     # Load mappings
     gene_map = pd.read_csv('./data/preprocessed/gene_index_mapping.csv')
@@ -333,7 +352,8 @@ def main():
         hidden2=n_pathway,
         fc_layers=fc_architecture,
         mask1=mask1,
-        mask2=mask2
+        mask2=mask2,
+        dropout=args.dropout
     )
     if args.criterion == "MSE":
         criterion = nn.MSELoss()
@@ -344,7 +364,11 @@ def main():
     elif args.criterion == "HuberLoss":
         criterion = nn.HuberLoss()
         logging.info("Setup of Loss confirmed as HuberLoss")
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay
+        )
 
     num_epochs = args.epochs
     train_losses = []
@@ -352,13 +376,43 @@ def main():
     early_stopper = EarlyStopping(patience=20, min_delta=1e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
 
+    X_train = X_train.to(device)
+    X_val = X_val.to(device)
+    y_train = y_train.to(device)
+    y_val = y_val.to(device)
+    model = model.to(device)
+
+    train_dataset = TensorDataset(X_train, y_train)
+    val_dataset = TensorDataset(X_val, y_val)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True
+)
     for epoch in range(num_epochs):
 
         model.train()
         optimizer.zero_grad()
 
-        outputs = model(X_train)
-        loss = criterion(outputs, y_train)
+        for xb, yb in train_loader:
+            xb, yb = xb.to(device), yb.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(xb)
+            loss = criterion(outputs, yb)
+            loss.backward()
+            optimizer.step()
 
         loss.backward()
 
@@ -377,10 +431,14 @@ def main():
 
         # Evaluation
         model.eval()
+        val_loss = 0
         with torch.no_grad():
-            val_output = model(X_val)
-            val_loss = criterion(val_output, y_val)
-            val_losses.append(val_loss.item())
+            for xb, yb in val_loader:
+                xb, yb = xb.to(device), yb.to(device)
+                outputs = model(xb)
+                val_loss += criterion(outputs, yb).item()
+
+        val_loss /= len(val_loader)
 
         logging.info(f"Epoch {epoch} | "
                      f"Train Loss: {loss.item():.6f} | "
