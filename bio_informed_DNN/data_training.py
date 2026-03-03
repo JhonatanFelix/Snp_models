@@ -57,7 +57,7 @@ def parse_args():
         "--epochs",
         type=int,
         required=False,
-        default= 150,
+        default= 200,
         help="Number of epochs to the training (default: 150)"
     )
     parser.add_argument(
@@ -81,7 +81,7 @@ def parse_args():
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--dropout", type=float, default=0.0)
     parser.add_argument("--batch-size", type=int, default=512)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=43)
         
     return parser.parse_args()
 
@@ -209,17 +209,6 @@ class EarlyStopping:
             if self.counter >= self.patience:
                 self.early_stop = True
 
-# ===============================
-# Logger
-# ===============================
-
-# def setup_logger(log_filename):
-#     logging.basicConfig(
-#         level=logging.INFO,
-#         format="%(asctime)s | %(levelname)s | %(message)s",
-#         handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
-#     )
-
 
 # ===============================
 # Main
@@ -229,8 +218,6 @@ def main():
 
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logging.info(f"Using device: {device}")
-    print(logging.getLogger().handlers)
 
     args_str = (
         f"{args.layers}_lr{args.learning_rate}_trait{args.trait}"
@@ -248,6 +235,9 @@ def main():
             logging.StreamHandler()
         ]   
     )
+
+    logging.info(f"Using device: {device}")
+    print(logging.getLogger().handlers)
 
     logging.info('\n'*3+"======== STARTED TRAINING ========"+'\n'*3)
     logging.info(f"Parameters: \n \
@@ -327,6 +317,9 @@ def main():
         mask2=mask2,
         dropout=args.dropout
     )
+
+    model = model.to(device)
+
     if args.criterion == "MSE":
         criterion = nn.MSELoss()
         logging.info("Setup of Loss confirmed as MSE")
@@ -336,6 +329,7 @@ def main():
     elif args.criterion == "HuberLoss":
         criterion = nn.HuberLoss()
         logging.info("Setup of Loss confirmed as HuberLoss")
+
     optimizer = torch.optim.Adam(
             model.parameters(),
             lr=args.learning_rate,
@@ -345,14 +339,13 @@ def main():
     num_epochs = args.epochs
     train_losses = []
     val_losses = []
-    #early_stopper = EarlyStopping(patience=20, min_delta=1e-4)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
+    early_stopper = EarlyStopping(patience=25, min_delta=1e-4)
 
-    X_train = X_train.to(device)
-    X_val = X_val.to(device)
-    y_train = y_train.to(device)
-    y_val = y_val.to(device)
-    model = model.to(device)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode = "min", patience=10, 
+        factor=0.5, threshold= min(1e-6, (args.learning_rate/1000))
+        )
+
 
     train_dataset = TensorDataset(X_train, y_train)
     val_dataset = TensorDataset(X_val, y_val)
@@ -370,55 +363,72 @@ def main():
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=4,
-        pin_memory=torch.cuda.is_available()
-)
+        pin_memory=torch.cuda.is_available())
+    
     for epoch in range(num_epochs):
 
         model.train()
         optimizer.zero_grad()
 
+        epoch_train_loss = 0
+        total_norm = 0
+
         for xb, yb in train_loader:
-            xb, yb = xb.to(device), yb.to(device)
+            xb = xb.to(device, non_blocking=True)
+            yb = yb.to(device, non_blocking=True) 
 
             optimizer.zero_grad()
+
             outputs = model(xb)
             loss = criterion(outputs, yb)
+
             loss.backward()
+
+            # Gradient monitoring
+            batch_norm = 0.0
+            for param in model.parameters():
+                if param.grad is not None:
+                    batch_norm += param.grad.data.norm(2).item()
+            total_norm += batch_norm
+
             optimizer.step()
 
-        # Gradient monitoring
-        total_norm = 0
-        for name, param in model.named_parameters():
-            if param.grad is not None:
-                grad_norm = param.grad.data.norm(2).item()
-                total_norm += grad_norm
+            epoch_train_loss += loss.item()
 
-        logging.info(f"Gradient L2 norm: {total_norm:.6f}")
+        epoch_train_loss /= len(train_loader)
+        total_norm /= len(train_loader)
 
-        optimizer.step()
+        train_losses.append(epoch_train_loss)
 
-        train_losses.append(loss.item())
+        logging.info(f"Epoch {epoch} | "
+                 f"Train Loss: {epoch_train_loss:.6f} | "
+                 f"Avg Grad Norm: {total_norm:.6f}")
 
-        # Evaluation
+        # Validation.....
         model.eval()
         val_loss = 0
+
         with torch.no_grad():
             for xb, yb in val_loader:
-                xb, yb = xb.to(device), yb.to(device)
+                xb = xb.to(device, non_blocking=True) 
+                yb = yb.to(device, non_blocking=True)  
+
                 outputs = model(xb)
                 val_loss += criterion(outputs, yb).item()
 
         val_loss /= len(val_loader)
+        val_losses.append(val_loss)
 
         logging.info(f"Epoch {epoch} | "
-                     f"Train Loss: {loss.item():.6f} | "
-                     f"val Loss: {val_loss:.6f}")
+                 f"Val Loss: {val_loss:.6f} | "
+                 f"LR: {optimizer.param_groups[0]['lr']:.6e}")
         
-        #early_stopper(val_loss)
+        early_stopper(val_loss)
 
-        # if early_stopper.early_stop:
-        #     print("Early stopping triggered")
-        #     break
+        if early_stopper.early_stop:
+            print("Early stopping triggered")
+            break
+
         scheduler.step(val_loss)
 
     logging.info('\n'*3+"======== FINISHED TRAINING ========")
@@ -440,6 +450,7 @@ def main():
     elif args.criterion == "HuberLoss":
         plt.ylabel("Huber Loss")
         logging.info("Setup of Loss confirmed as HuberLoss on the plot")
+    plt.ylim([0,2])
     plt.title("Training and val Loss")
     plt.savefig(f"./results/test_hyp/val_architecture_{args_str}.png")
     plt.show()
