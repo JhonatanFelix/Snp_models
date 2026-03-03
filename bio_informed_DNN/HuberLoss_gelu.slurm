@@ -57,5 +57,4 @@ python data_training.py \
     --weight-decay $WD \
     --dropout $DROP \
     --activation gelu \
-    --early-stop \
     --batch-size $BATCH
