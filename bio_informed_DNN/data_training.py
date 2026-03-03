@@ -196,14 +196,15 @@ class PartialNet(nn.Module):
 # ===============================
 
 class EarlyStopping:
-    def __init__(self, patience=20, min_delta=1e-4):
+    def __init__(self, patience=20, min_delta=1e-4, max_delta =1e-2):
         self.patience = patience
         self.min_delta = min_delta
+        self.max_delta = max_delta
         self.best_loss = None
         self.counter = 0
         self.early_stop = False
 
-    def __call__(self, val_loss):
+    def __call__(self, val_loss, loss):
         if self.best_loss is None:
             self.best_loss = val_loss
             return
@@ -211,7 +212,7 @@ class EarlyStopping:
         if val_loss < self.best_loss - self.min_delta:
             self.best_loss = val_loss
             self.counter = 0
-        else:
+        elif (val_loss > self.best_loss + self.max_delta) and (abs(val_loss - loss) > 5e-2):
             self.counter += 1
 
             if self.counter >= self.patience:
@@ -349,10 +350,10 @@ def main():
     train_losses = []
     val_losses = []
     if args.early_stop == 'true':
-        early_stopper = EarlyStopping(patience=9, min_delta=1e-3)
+        early_stopper = EarlyStopping(patience=9, min_delta=1e-4)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode = "min", patience=5, 
+        optimizer, mode = "min", patience=4, 
         factor=0.5, threshold= min(1e-6, (args.learning_rate/1000))
         )
 
@@ -433,7 +434,7 @@ def main():
                  f"LR: {optimizer.param_groups[0]['lr']:.6e}")
         
         if args.early_stop == 'true':
-            early_stopper(val_loss)
+            early_stopper(val_loss, epoch_train_loss)
 
             if early_stopper.early_stop:
                 logging.info("Early stopping triggered")
