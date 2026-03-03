@@ -2,6 +2,7 @@ import argparse
 import logging
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -57,7 +58,7 @@ def parse_args():
         "--epochs",
         type=int,
         required=False,
-        default= 200,
+        default= 100,
         help="Number of epochs to the training (default: 150)"
     )
     parser.add_argument(
@@ -82,6 +83,7 @@ def parse_args():
     parser.add_argument("--dropout", type=float, default=0.0)
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--seed", type=int, default=43)
+    parser.add_argument("--early-stop", type=str, default='true')
         
     return parser.parse_args()
 
@@ -144,14 +146,18 @@ class PartialNet(nn.Module):
         self.norm1 = nn.LayerNorm(hidden1) if use_layernorm else nn.Identity()
         self.norm2 = nn.LayerNorm(hidden2) if use_layernorm else nn.Identity()
 
+        if dropout > 0:
+            self.dropout1 = nn.Dropout(dropout)
+            self.dropout2 = nn.Dropout(dropout)
+
         layers = []
         prev_dim = hidden2
 
         for dim in fc_layers:
             linear = nn.Linear(prev_dim, dim)
-            if activation == "relu":
+            if activation in ["relu","gelu"]:
                 nn.init.kaiming_normal_(linear.weight, nonlinearity="relu")
-            elif activation in ['gelu','sigmoid']:
+            elif activation == 'sigmoid':
                 nn.init.kaiming_normal_(linear.weight, nonlinearity="linear")
             
             nn.init.zeros_(linear.bias)
@@ -175,10 +181,12 @@ class PartialNet(nn.Module):
         x = self.masked1(x)
         x = self.norm1(x)
         x = self.activation_fn(x)
+        x = self.dropout1(x)
 
         x = self.masked2(x)
         x = self.norm2(x)
         x = self.activation_fn(x)
+        x = self.dropout2(x)
 
         x = self.fc_stack(x)
         return x
@@ -223,7 +231,7 @@ def main():
         f"{args.layers}_lr{args.learning_rate}_trait{args.trait}"
         f"_epoch{args.epochs}_crit{args.criterion}_act{args.activation}"
         f"_batch{args.batch_size}_wdecay{args.weight_decay}_dropout{args.dropout}"
-        f"_seed{args.seed}"
+        f"_seed{args.seed}_ea{args.early_stop == 'true'}"
     )
     log_name = f'./logs_models/training_{args_str}.log'
 
@@ -315,7 +323,8 @@ def main():
         fc_layers=fc_architecture,
         mask1=mask1,
         mask2=mask2,
-        dropout=args.dropout
+        dropout=args.dropout,
+        activation = args.activation
     )
 
     model = model.to(device)
@@ -339,10 +348,11 @@ def main():
     num_epochs = args.epochs
     train_losses = []
     val_losses = []
-    early_stopper = EarlyStopping(patience=25, min_delta=1e-4)
+    if args.early_stop == 'true':
+        early_stopper = EarlyStopping(patience=9, min_delta=1e-3)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode = "min", patience=10, 
+        optimizer, mode = "min", patience=5, 
         factor=0.5, threshold= min(1e-6, (args.learning_rate/1000))
         )
 
@@ -368,7 +378,6 @@ def main():
     for epoch in range(num_epochs):
 
         model.train()
-        optimizer.zero_grad()
 
         epoch_train_loss = 0
         total_norm = 0
@@ -423,11 +432,12 @@ def main():
                  f"Val Loss: {val_loss:.6f} | "
                  f"LR: {optimizer.param_groups[0]['lr']:.6e}")
         
-        early_stopper(val_loss)
+        if args.early_stop == 'true':
+            early_stopper(val_loss)
 
-        if early_stopper.early_stop:
-            print("Early stopping triggered")
-            break
+            if early_stopper.early_stop:
+                logging.info("Early stopping triggered")
+                break
 
         scheduler.step(val_loss)
 
@@ -445,12 +455,13 @@ def main():
         plt.ylabel("MSE Loss")
         logging.info("Setup of Loss confirmed as MSE on the plot")
     elif args.criterion == "MAE":
-        plt.ylabel("Huber Loss")
+        plt.ylabel("MAE Loss")
         logging.info("Setup of Loss confirmed as MAE on the plot")
     elif args.criterion == "HuberLoss":
         plt.ylabel("Huber Loss")
         logging.info("Setup of Loss confirmed as HuberLoss on the plot")
-    plt.ylim([0,2])
+    if args.criterion == 'MSE':
+        plt.ylim([0,2])
     plt.title("Training and val Loss")
     plt.savefig(f"./results/test_hyp/val_architecture_{args_str}.png")
     plt.show()
@@ -563,22 +574,51 @@ def main():
     plt.close()
 
     # ===============================
-    # Gradient Distribution Plot
+    # Gradient Distribution Plot (Masked-aware)
     # ===============================
 
     all_grads = []
 
-    for param in model.parameters():
-        if param.grad is not None:
-            all_grads.append(param.grad.view(-1))
+    for name, param in model.named_parameters():
 
-    all_grads = torch.cat(all_grads).cpu().numpy()
+        if param.grad is None:
+            continue
 
-    plt.figure()
-    plt.hist(all_grads, bins=100)
-    plt.title("Gradient Distribution")
-    plt.savefig(f"./results/test_hyp/grad_distribution_{args_str}.png")
-    plt.close()
+        grad = param.grad.detach()
+
+        # Se for camada mascarada, remover gradientes onde máscara = 0
+        if "masked1.weight" in name:
+            mask = model.masked1.mask
+            grad = grad[mask == 1]
+
+        elif "masked2.weight" in name:
+            mask = model.masked2.mask
+            grad = grad[mask == 1]
+
+        else:
+            grad = grad.view(-1)
+
+        # Remover zeros exatos (opcional mas recomendado)
+        grad = grad[grad != 0]
+
+        if grad.numel() > 0:
+            all_grads.append(grad.view(-1))
+
+    if len(all_grads) > 0:
+        all_grads = torch.cat(all_grads).cpu().numpy()
+
+        # Limitar eixo X para melhor visualização (cortar outliers extremos)
+        lower = np.percentile(all_grads, 1)
+        upper = np.percentile(all_grads, 99)
+
+        plt.figure()
+        plt.hist(all_grads, bins=100, range=(lower, upper))
+        plt.xlim(lower, upper)
+        plt.title("Gradient Distribution (Non-masked weights)")
+        plt.xlabel("Gradient value")
+        plt.ylabel("Frequency")
+        plt.savefig(f"./results/test_hyp/grad_distribution_{args_str}.png")
+        plt.close()
 
 if __name__ == '__main__':
     main()
