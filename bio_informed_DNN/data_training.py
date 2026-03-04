@@ -586,7 +586,6 @@ def main():
 
         grad = param.grad.detach()
 
-        # Se for camada mascarada, remover gradientes onde máscara = 0
         if "masked1.weight" in name:
             mask = model.masked1.mask
             grad = grad[mask == 1]
@@ -598,7 +597,6 @@ def main():
         else:
             grad = grad.view(-1)
 
-        # Remover zeros exatos (opcional mas recomendado)
         grad = grad[grad != 0]
 
         if grad.numel() > 0:
@@ -607,7 +605,6 @@ def main():
     if len(all_grads) > 0:
         all_grads = torch.cat(all_grads).cpu().numpy()
 
-        # Limitar eixo X para melhor visualização (cortar outliers extremos)
         lower = np.percentile(all_grads, 1)
         upper = np.percentile(all_grads, 99)
 
