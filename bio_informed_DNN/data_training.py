@@ -58,7 +58,7 @@ def parse_args():
         "--epochs",
         type=int,
         required=False,
-        default= 100,
+        default= 150,
         help="Number of epochs to the training (default: 150)"
     )
     parser.add_argument(
@@ -146,9 +146,8 @@ class PartialNet(nn.Module):
         self.norm1 = nn.LayerNorm(hidden1) if use_layernorm else nn.Identity()
         self.norm2 = nn.LayerNorm(hidden2) if use_layernorm else nn.Identity()
 
-        if dropout > 0:
-            self.dropout1 = nn.Dropout(dropout)
-            self.dropout2 = nn.Dropout(dropout)
+        self.dropout1 = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        self.dropout2 = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
         layers = []
         prev_dim = hidden2
@@ -196,7 +195,7 @@ class PartialNet(nn.Module):
 # ===============================
 
 class EarlyStopping:
-    def __init__(self, patience=20, min_delta=1e-4, max_delta =1e-2):
+    def __init__(self, patience=20, min_delta=1e-4, max_delta =1e-3):
         self.patience = patience
         self.min_delta = min_delta
         self.max_delta = max_delta
@@ -212,7 +211,7 @@ class EarlyStopping:
         if val_loss < self.best_loss - self.min_delta:
             self.best_loss = val_loss
             self.counter = 0
-        elif (val_loss > self.best_loss + self.max_delta) and (abs(val_loss - loss) > 5e-2):
+        elif (val_loss > self.best_loss + self.max_delta) and (abs(val_loss - loss) > 3e-2):
             self.counter += 1
 
             if self.counter >= self.patience:
@@ -234,7 +233,7 @@ def main():
         f"_batch{args.batch_size}_wdecay{args.weight_decay}_dropout{args.dropout}"
         f"_seed{args.seed}_ea{args.early_stop == 'true'}"
     )
-    log_name = f'./logs_models/training_{args_str}.log'
+    log_name = f'./logs_models/crit{args.criterion}_{args.activation}/training_{args_str}.log'
 
     logging.basicConfig(
         level=logging.INFO,
@@ -464,7 +463,7 @@ def main():
     if args.criterion == 'MSE':
         plt.ylim([0,2])
     plt.title("Training and val Loss")
-    plt.savefig(f"./results/test_hyp/val_architecture_{args_str}.png")
+    plt.savefig(f"./results/test_hyp/crit{args.criterion}_{args.activation}/val_architecture_{args_str}.png")
     plt.show()
 
     logging.info('\n'+"======== PLOTTED IMAGE ========")
@@ -571,7 +570,7 @@ def main():
     plt.xlabel("True Phenotype")
     plt.ylabel("Predicted Phenotype")
     plt.title("Prediction vs True ")
-    plt.savefig(f"./results/test_hyp/pred_vs_true_{args_str}.png")
+    plt.savefig(f"./results/test_hyp/crit{args.criterion}_{args.activation}/pred_vs_true_{args_str}.png")
     plt.close()
 
     # ===============================
@@ -618,7 +617,7 @@ def main():
         plt.title("Gradient Distribution (Non-masked weights)")
         plt.xlabel("Gradient value")
         plt.ylabel("Frequency")
-        plt.savefig(f"./results/test_hyp/grad_distribution_{args_str}.png")
+        plt.savefig(f"./results/test_hyp/crit{args.criterion}_{args.activation}/grad_distribution_{args_str}.png")
         plt.close()
 
 if __name__ == '__main__':
