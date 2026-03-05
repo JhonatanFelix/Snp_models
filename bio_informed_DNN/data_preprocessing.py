@@ -25,7 +25,7 @@ def setup_logger(log_filename):
 
 def main():
 
-    log_filename = "./logs/btaurus_data_preprocessing.log"
+    log_filename = "./logs/btaurus_new_data_preprocessing.log"
     setup_logger(log_filename)
     skip = "\n"*3
     logging.info(skip+"========== STARTING PREPROCESSING =========="+skip)
@@ -59,7 +59,7 @@ def main():
 
     snps_gr = pr.PyRanges(snps_pos)
 
-    genes = pr.read_gtf("../data/Bos_taurus.UMD3.1.90.gtf")
+    genes = pr.read_gtf("../data/Bos_taurus.ARS-UCD2.0.115.gtf")
     genes = genes[genes.Feature == "gene"]
 
     # Normalize chromosome format in GTF
@@ -162,8 +162,8 @@ def main():
     # 6 Save Masks to Disk
     # ==========================================================
 
-    save_npz("./data/preprocessed/mask_snp_gene.npz", mask_snp_gene)
-    save_npz("./data/preprocessed/mask_gene_pathway.npz", mask_gene_pathway)
+    save_npz("./data/preprocessed/Bos_taurus_new/mask_snp_gene.npz", mask_snp_gene)
+    save_npz("./data/preprocessed/Bos_taurus_new/mask_gene_pathway.npz", mask_gene_pathway)
 
     logging.info("Masks saved to disk.")
 
@@ -176,7 +176,7 @@ def main():
         "snp_index": range(len(unique_snps)),
         "snp_id": unique_snps
     })
-    snp_mapping_df.to_csv("./data/preprocessed/snp_index_mapping.csv", index=False)
+    snp_mapping_df.to_csv("./data/preprocessed/Bos_taurus_new/snp_index_mapping.csv", index=False)
 
     # Gene mapping
     gene_metadata = overlap_df[['gene_id', 'gene_name']].drop_duplicates()
@@ -193,14 +193,14 @@ def main():
         how="left"
     ).drop(columns="gene_id")
 
-    gene_mapping_df.to_csv("./data/preprocessed/gene_index_mapping.csv", index=False)
+    gene_mapping_df.to_csv("./data/preprocessed/Bos_taurus_new/gene_index_mapping.csv", index=False)
 
     # Pathway mapping
     pathway_mapping_df = pd.DataFrame({
         "pathway_index": range(len(pathway_list)),
         "pathway_id": pathway_list
     })
-    pathway_mapping_df.to_csv("./data/preprocessed/pathway_index_mapping.csv", index=False)
+    pathway_mapping_df.to_csv("./data/preprocessed/Bos_taurus_new/pathway_index_mapping.csv", index=False)
 
     logging.info("Index mappings saved to disk.")
     

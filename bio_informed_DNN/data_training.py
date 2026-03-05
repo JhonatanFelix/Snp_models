@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -195,7 +196,7 @@ class PartialNet(nn.Module):
 # ===============================
 
 class EarlyStopping:
-    def __init__(self, patience=20, min_delta=1e-4, max_delta =1e-3):
+    def __init__(self, patience=10, min_delta=1e-4, max_delta =1e-3):
         self.patience = patience
         self.min_delta = min_delta
         self.max_delta = max_delta
@@ -233,7 +234,28 @@ def main():
         f"_batch{args.batch_size}_wdecay{args.weight_decay}_dropout{args.dropout}"
         f"_seed{args.seed}_ea{args.early_stop == 'true'}"
     )
-    log_name = f'./logs_models/crit{args.criterion}_{args.activation}/training_{args_str}.log'
+    
+    path_crit = f'crit{args.criterion}_{args.activation}'
+    path_results = './results/test_hyp'
+    path_annot = 'ARS-UCD2.0.115'
+    path_preprocessed = './data/preprocessed/'
+
+    path_to_save = os.path.join(path_annot, path_crit)
+    path_logs = os.path.join('./logs_models/',path_to_save)
+    path_figs = os.path.join(path_results, path_to_save)
+
+    path_pre_data = os.path.join(path_preprocessed, path_annot)
+
+    gene_map_path = os.path.join(path_pre_data,'gene_index_mapping.csv')
+    pathway_map_path = os.path.join(path_pre_data,'pathway_index_mapping.csv')
+    snp_map_path = os.path.join(path_pre_data,'snp_index_mapping.csv')
+    mask_snp_path = os.path.join(path_pre_data, 'mask_snp_gene.npz')
+    mask_gene_path = os.path.join(path_pre_data, 'mask_gene_pathway.npz')
+
+    os.makedirs(path_logs, exist_ok=True)
+    os.makedirs(path_figs, exist_ok=True)
+
+    log_name = os.path.join(path_logs,f'training_{args_str}.log')
 
     logging.basicConfig(
         level=logging.INFO,
@@ -256,18 +278,23 @@ def main():
                 \n dropout{args.dropout} \n seed{args.seed}'")
 
     # Load mappings
-    gene_map = pd.read_csv('./data/preprocessed/gene_index_mapping.csv')
-    pathway_map = pd.read_csv('./data/preprocessed/pathway_index_mapping.csv')
-    snp_map = pd.read_csv('./data/preprocessed/snp_index_mapping.csv')
+    gene_map = pd.read_csv(gene_map_path)
+    pathway_map = pd.read_csv(pathway_map_path)
+    snp_map = pd.read_csv(snp_map_path)
 
     n_genes = gene_map.shape[0]
     n_pathway = pathway_map.shape[0]
     n_snps = snp_map.shape[0]
 
     # Load sparse masks properly
-    mask_snp_gene = load_npz("./data/preprocessed/mask_snp_gene.npz")
-    mask_gene_pathway = load_npz("./data/preprocessed/mask_gene_pathway.npz")
+    mask_snp_gene = load_npz(mask_snp_path)
+    mask_gene_pathway = load_npz(mask_gene_path)
 
+    logging.info(mask_snp_gene.shape)
+    logging.info(mask_snp_gene.sum())
+    logging.info(mask_gene_pathway.shape)
+    logging.info(mask_gene_pathway.sum())
+    
     # Convert sparse → dense tensor
     mask1 = torch.from_numpy(mask_snp_gene.toarray()).float()
     mask2 = torch.from_numpy(mask_gene_pathway.toarray()).float()
@@ -349,7 +376,7 @@ def main():
     train_losses = []
     val_losses = []
     if args.early_stop == 'true':
-        early_stopper = EarlyStopping(patience=9, min_delta=1e-4)
+        early_stopper = EarlyStopping(patience=9, min_delta=1e-5)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode = "min", patience=4, 
@@ -463,7 +490,7 @@ def main():
     if args.criterion == 'MSE':
         plt.ylim([0,2])
     plt.title("Training and val Loss")
-    plt.savefig(f"./results/test_hyp/crit{args.criterion}_{args.activation}/val_architecture_{args_str}.png")
+    plt.savefig(os.path.join(path_figs,f"val_architecture_{args_str}.png"))
     plt.show()
 
     logging.info('\n'+"======== PLOTTED IMAGE ========")
@@ -570,7 +597,7 @@ def main():
     plt.xlabel("True Phenotype")
     plt.ylabel("Predicted Phenotype")
     plt.title("Prediction vs True ")
-    plt.savefig(f"./results/test_hyp/crit{args.criterion}_{args.activation}/pred_vs_true_{args_str}.png")
+    plt.savefig(os.path.join(path_figs, f"pred_vs_true_{args_str}.png"))
     plt.close()
 
     # ===============================
@@ -614,7 +641,7 @@ def main():
         plt.title("Gradient Distribution (Non-masked weights)")
         plt.xlabel("Gradient value")
         plt.ylabel("Frequency")
-        plt.savefig(f"./results/test_hyp/crit{args.criterion}_{args.activation}/grad_distribution_{args_str}.png")
+        plt.savefig(os.path.join(path_figs, f"grad_distribution_{args_str}.png"))
         plt.close()
 
 if __name__ == '__main__':
