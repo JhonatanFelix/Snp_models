@@ -5,6 +5,7 @@ import pyranges as pr
 from gprofiler import GProfiler
 from pandas_plink import read_plink
 from scipy.sparse import coo_matrix, save_npz
+import os
 
 
 # ===============================
@@ -162,6 +163,7 @@ def main():
     # 6 Save Masks to Disk
     # ==========================================================
 
+    os.makedirs('./data/preprocessed/Bos_taurus_new/') #! Make the correct pathways in everyplace
     save_npz("./data/preprocessed/Bos_taurus_new/mask_snp_gene.npz", mask_snp_gene)
     save_npz("./data/preprocessed/Bos_taurus_new/mask_gene_pathway.npz", mask_gene_pathway)
 
