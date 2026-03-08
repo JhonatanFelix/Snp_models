@@ -79,6 +79,12 @@ def parse_args():
         help='Choose the activation function for training: relu, sigmoid, gelu \
             (default: gelu)'
     )
+    parser.add_argument(
+        "--save-model",
+        type=str,
+        default="false",
+        help="If true, saves model checkpoint with all metadata"
+    )
 
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--dropout", type=float, default=0.0)
@@ -196,15 +202,14 @@ class PartialNet(nn.Module):
 # ===============================
 
 class EarlyStopping:
-    def __init__(self, patience=10, min_delta=1e-4, max_delta =1e-3):
+    def __init__(self, patience=10, min_delta=1e-4):
         self.patience = patience
         self.min_delta = min_delta
-        self.max_delta = max_delta
         self.best_loss = None
         self.counter = 0
         self.early_stop = False
 
-    def __call__(self, val_loss, loss):
+    def __call__(self, val_loss):
         if self.best_loss is None:
             self.best_loss = val_loss
             return
@@ -212,11 +217,12 @@ class EarlyStopping:
         if val_loss < self.best_loss - self.min_delta:
             self.best_loss = val_loss
             self.counter = 0
-        elif (val_loss > self.best_loss + self.max_delta) and (abs(val_loss - loss) > 3e-2):
+        else:
             self.counter += 1
-
             if self.counter >= self.patience:
                 self.early_stop = True
+    
+            return self.early_stop
 
 
 # ===============================
@@ -241,9 +247,10 @@ def main():
     path_preprocessed = './data/preprocessed/'
 
     path_to_save = os.path.join(path_annot, path_crit)
+    path_models = os.path.join("./saved_models", path_to_save)
     path_logs = os.path.join('./logs_models/',path_to_save)
     path_figs = os.path.join(path_results, path_to_save)
-
+    
     path_pre_data = os.path.join(path_preprocessed, path_annot)
 
     gene_map_path = os.path.join(path_pre_data,'gene_index_mapping.csv')
@@ -251,6 +258,8 @@ def main():
     snp_map_path = os.path.join(path_pre_data,'snp_index_mapping.csv')
     mask_snp_path = os.path.join(path_pre_data, 'mask_snp_gene.npz')
     mask_gene_path = os.path.join(path_pre_data, 'mask_gene_pathway.npz')
+    os.makedirs(path_models, exist_ok=True)
+
 
     os.makedirs(path_logs, exist_ok=True)
     os.makedirs(path_figs, exist_ok=True)
@@ -460,7 +469,7 @@ def main():
                  f"LR: {optimizer.param_groups[0]['lr']:.6e}")
         
         if args.early_stop == 'true':
-            early_stopper(val_loss, epoch_train_loss)
+            early_stopper(val_loss)
 
             if early_stopper.early_stop:
                 logging.info("Early stopping triggered")
@@ -469,6 +478,7 @@ def main():
         scheduler.step(val_loss)
 
     logging.info('\n'*3+"======== FINISHED TRAINING ========")
+
 
     # ===============================
     # Plot Loss Curves
@@ -643,6 +653,100 @@ def main():
         plt.ylabel("Frequency")
         plt.savefig(os.path.join(path_figs, f"grad_distribution_{args_str}.png"))
         plt.close()
+
+    # ===============================
+    # Save Model Checkpoint
+    # ===============================
+
+    if args.save_model == "true":
+
+        model_path = os.path.join(path_models, f"model_{args_str}.pt")
+
+        snp_names = snp_map["snp_id"].values
+        gene_names = gene_map["ensembl_gene_id"].values
+        pathway_names = pathway_map["pathway_id"].values
+
+        checkpoint = {
+
+            # =====================
+            # MODEL
+            # =====================
+            "model_state_dict": model.state_dict(),
+
+            "architecture": {
+                "input_dim": n_snps,
+                "hidden1": n_genes,
+                "hidden2": n_pathway,
+                "fc_layers": fc_architecture,
+                "activation": args.activation,
+                "dropout": args.dropout
+            },
+
+            # =====================
+            # TRAINING CONFIG
+            # =====================
+            "training_args": vars(args),
+
+            # =====================
+            # DATA USED FOR TRAINING
+            # =====================
+            "X_train": X_train.cpu(),
+            "X_val": X_val.cpu(),
+            "y_train": y_train.cpu(),
+            "y_val": y_val.cpu(),
+
+            # =====================
+            # SCALERS
+            # =====================
+            "scaler_X_mean": scaler_X.mean_,
+            "scaler_X_scale": scaler_X.scale_,
+            "scaler_y_mean": scaler_y.mean_,
+            "scaler_y_scale": scaler_y.scale_,
+
+            # =====================
+            # BIOLOGICAL MAPPINGS
+            # =====================
+            "gene_map_dataframe": gene_map,
+            "pathway_map_dataframe": pathway_map,
+            "snp_map_dataframe": snp_map,
+
+            # =====================
+            # HUMAN READABLE NAMES
+            # =====================
+            "snp_names": snp_names,
+            "gene_names": gene_names,
+            "pathway_names": pathway_names,
+
+            # =====================
+            # NETWORK MASKS
+            # =====================
+            "mask_snp_gene": mask1.cpu(),
+            "mask_gene_pathway": mask2.cpu(),
+
+            # =====================
+            # INDEX RELATIONSHIPS
+            # =====================
+            "n_snps": n_snps,
+            "n_genes": n_genes,
+            "n_pathways": n_pathway,
+
+            # =====================
+            # METRICS
+            # =====================
+            "final_metrics": {
+                "MAE": mae,
+                "MSE": mse,
+                "R2": r2,
+                "Pearson": pearson_corr
+            }
+        }
+
+        torch.save(checkpoint, model_path)
+
+        logging.info(f"\nSaved full model checkpoint at: {model_path}")
+
+    logging.info(f"\nModel checkpoint saved at: {model_path}")
+
 
 if __name__ == '__main__':
     main()
