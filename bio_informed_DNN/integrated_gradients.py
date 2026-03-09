@@ -12,8 +12,8 @@ from model import PartialNet
 # Load checkpoint
 # ===============================
 
-path_model = ''
-checkpoint = torch.load(path_model, map_location="cpu")
+path_model = './saved_models/ARS-UCD2.0.115/critHuberLoss_gelu/model_[50]_lr0.0001_trait2_epoch150_critHuberLoss_actgelu_batch256_wdecay0.0001_dropout0.5_seed43_eaTrue.pt'
+checkpoint = torch.load(path_model, map_location="cpu", weights_only=False)
 
 arch = checkpoint["architecture"]
 
@@ -85,42 +85,34 @@ snp_df = snp_df.sort_values("importance", ascending=False)
 # ===============================
 # Gene importance
 # ===============================
+print(mask_snp_gene.shape)
+print(len(snp_importance))
+print(f"The mask_snp_gene has the shape {mask_snp_gene.shape}")
 
-gene_importance = np.zeros(mask_snp_gene.shape[1])
-
-for g in range(mask_snp_gene.shape[1]):
-    snps = np.where(mask_snp_gene[:, g] == 1)[0]
-    gene_importance[g] = snp_importance[snps].sum()
+gene_importance = mask_snp_gene @ snp_importance
 
 gene_importance = zscore(gene_importance)
 
 gene_df = pd.DataFrame({
     "gene": gene_names,
     "importance": gene_importance
-})
-
-gene_df = gene_df.sort_values("importance", ascending=False)
+}).sort_values("importance", ascending=False)
 
 
 # ===============================
 # Pathway importance
 # ===============================
 
-pathway_importance = np.zeros(mask_gene_pathway.shape[1])
+pathway_importance = mask_gene_pathway @ gene_importance
 
-for p in range(mask_gene_pathway.shape[1]):
-    genes = np.where(mask_gene_pathway[:, p] == 1)[0]
-    pathway_importance[p] = gene_importance[genes].sum()
+pathway_importance = pathway_importance / mask_gene_pathway.sum(axis=1)
 
 pathway_importance = zscore(pathway_importance)
 
 pathway_df = pd.DataFrame({
     "pathway": pathway_names,
     "importance": pathway_importance
-})
-
-pathway_df = pathway_df.sort_values("importance", ascending=False)
-
+}).sort_values("importance", ascending=False)
 
 # ===============================
 # Save tables

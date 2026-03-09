@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -660,7 +661,11 @@ def main():
 
     if args.save_model == "true":
 
-        model_path = os.path.join(path_models, f"model_{args_str}.pt")
+        seconds = time.time()
+        local_time = time.localtime(seconds)
+        time_string = time.strftime("%Y-%m-%d %H:%M:%S", local_time)
+        
+        model_path = os.path.join(path_models, f"model_{args_str}_{time_string}.pt")
 
         snp_names = snp_map["snp_id"].values
         gene_names = gene_map["ensembl_gene_id"].values
@@ -743,7 +748,7 @@ def main():
 
         torch.save(checkpoint, model_path)
 
-        logging.info(f"\nSaved full model checkpoint at: {model_path}")
+        logging.info(f"\nSaved full model checkpoint at: {model_path}_{time_string}")
 
     logging.info(f"\nModel checkpoint saved at: {model_path}")
 
