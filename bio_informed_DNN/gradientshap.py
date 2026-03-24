@@ -10,6 +10,9 @@ from scipy.stats import zscore
 # Load checkpoint
 # ===============================
 
+print("================== \n \n \n")
+print("Started SHAP")
+
 path_model = "./saved_models/ARS-UCD2.0.115/critHuberLoss_gelu/model_[50]_lr0.0001_trait2_epoch150_critHuberLoss_actgelu_batch256_wdecay0.0001_dropout0.5_seed43_eaTrue.pt"
 
 checkpoint = torch.load(path_model, map_location="cpu", weights_only=False)
@@ -188,3 +191,6 @@ print(gene_df.head(10))
 
 print("\nTop Pathways")
 print(pathway_df.head(10))
+
+print("Finished SHAP")
+print("================== \n \n \n")

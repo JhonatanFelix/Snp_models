@@ -5,8 +5,8 @@ import re
 import matplotlib.pyplot as plt
 import pandas as pd
 
-LOG_DIR = "./logs_models/ARS-UC2.0.115/critHuberLoss_gelu"
-OUTPUT_DIR = "./log_analysis_results/ARS-UC2.0.115/critMAE_gelu"
+LOG_DIR = "./logs_models/ARS-UCD2.0.115/critHuberLoss_gelu/"
+OUTPUT_DIR = "./log_analysis_results/ARS-UCD2.0.115/critHuberLoss_gelu/"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
