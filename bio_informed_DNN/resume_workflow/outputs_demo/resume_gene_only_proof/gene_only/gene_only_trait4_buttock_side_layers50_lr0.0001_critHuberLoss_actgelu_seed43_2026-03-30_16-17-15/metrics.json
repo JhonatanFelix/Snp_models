@@ -1,0 +1,23 @@
+{
+  "model_type": "gene_only",
+  "trait": 4,
+  "trait_label": "buttock_side",
+  "validation": {
+    "MAE": 1.0154913663864136,
+    "MSE": 1.8170981407165527,
+    "R2": 0.18641263246536255,
+    "Pearson": 0.43762972070108197,
+    "scaled_loss": 0.2790899481624365,
+    "best_epoch": 4,
+    "best_val_loss": 0.2790899481624365,
+    "best_train_loss": 0.3186574769871576
+  },
+  "test": {
+    "MAE": 1.0932297706604004,
+    "MSE": 2.0002927780151367,
+    "R2": 0.19571614265441895,
+    "Pearson": 0.45076572119264197,
+    "scaled_loss": 0.31236229607692134
+  },
+  "run_directory": "/home/ulg/genan/jrfelix/projects/attention_tests/Snp_models/bio_informed_DNN/resume_workflow/outputs_demo/resume_gene_only_proof/gene_only/gene_only_trait4_buttock_side_layers50_lr0.0001_critHuberLoss_actgelu_seed43_2026-03-30_16-17-15"
+}

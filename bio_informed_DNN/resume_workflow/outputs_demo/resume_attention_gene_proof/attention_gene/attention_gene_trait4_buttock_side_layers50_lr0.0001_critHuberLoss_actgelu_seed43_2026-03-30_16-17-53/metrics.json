@@ -1,0 +1,23 @@
+{
+  "model_type": "attention_gene",
+  "trait": 4,
+  "trait_label": "buttock_side",
+  "validation": {
+    "MAE": 1.0161223411560059,
+    "MSE": 1.8387616872787476,
+    "R2": 0.1767129898071289,
+    "Pearson": 0.4297380675688318,
+    "scaled_loss": 0.2804656848311424,
+    "best_epoch": 3,
+    "best_val_loss": 0.2804656848311424,
+    "best_train_loss": 0.32696353580270493
+  },
+  "test": {
+    "MAE": 1.095426082611084,
+    "MSE": 2.025043487548828,
+    "R2": 0.18576431274414062,
+    "Pearson": 0.43754671849302823,
+    "scaled_loss": 0.3150494625935188
+  },
+  "run_directory": "/home/ulg/genan/jrfelix/projects/attention_tests/Snp_models/bio_informed_DNN/resume_workflow/outputs_demo/resume_attention_gene_proof/attention_gene/attention_gene_trait4_buttock_side_layers50_lr0.0001_critHuberLoss_actgelu_seed43_2026-03-30_16-17-53"
+}
